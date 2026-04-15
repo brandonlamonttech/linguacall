@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LinguaCall</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0f; --surface: #13131a; --surface2: #1c1c27;
+    --border: rgba(255,255,255,0.07); --accent: #7c6cfc;
+    --accent2: #4fd8c4; --text: #e8e8f0; --muted: #6b6b80;
+    --danger: #fc6c7c; --radius: 16px;
+  }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(124,108,252,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(124,108,252,0.03) 1px, transparent 1px);
+    background-size: 48px 48px; pointer-events: none; z-index: 0;
+  }
+  .logo { text-align: center; }
+  .logo h1 { font-family: 'Cormorant Garamond', serif; font-size: clamp(2.4rem, 6vw, 4rem); font-weight: 700; letter-spacing: 0.05em; background: linear-gradient(135deg, #fff 0%, var(--accent) 60%, var(--accent2) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .logo p { color: var(--muted); font-size: 1rem; font-weight: 300; margin-top: 8px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 36px; width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 20px; }
+  .card-title { font-family: 'Cormorant Garamond', serif; font-size: 1.3rem; font-weight: 600; }
+  label { font-size: 0.78rem; font-weight: 500; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; display: block; margin-bottom: 8px; }
+  select, input[type="text"], input[type="tel"], input[type="number"] { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 0.95rem; padding: 12px 14px; outline: none; transition: border-color 0.2s; appearance: none; -webkit-appearance: none; }
+  select:focus, input:focus { border-color: var(--accent); }
+  input[type="number"] { letter-spacing: 0.3em; text-align: center; font-size: 1.2rem; -moz-appearance: textfield; }
+  input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  .select-wrap { position: relative; }
+  .select-wrap::after { content: '▾'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .room-row { display: flex; gap: 10px; }
+  .room-row input { flex: 1; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 22px; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 500; cursor: pointer; transition: all 0.18s; border: none; white-space: nowrap; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #6b5cf0; transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); }
+  .btn-full { width: 100%; }
+  .divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 0.8rem; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .auth-hint { font-size: 0.8rem; color: var(--muted); text-align: center; line-height: 1.5; }
+  .auth-error { font-size: 0.85rem; color: var(--danger); text-align: center; min-height: 20px; }
+  .back-link { font-size: 0.8rem; color: var(--muted); text-align: center; cursor: pointer; text-decoration: underline; }
+  .back-link:hover { color: var(--text); }
+  #recaptcha-container { display: flex; justify-content: center; }
+  #status-msg { font-size: 0.85rem; color: var(--muted); text-align: center; min-height: 20px; }
+  #status-msg.waiting { color: var(--accent2); }
+  #status-msg.error { color: var(--danger); }
+  #status-msg.ok { color: var(--accent2); }
+  .screen { position: relative; z-index: 1; min-height: 100vh; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; gap: 40px; }
+  .screen.active { display: flex; }
+  #call-screen { display: none; position: fixed; inset: 0; z-index: 10; background: #06060a; flex-direction: column; }
+  #call-screen.active { display: flex; }
+  .videos { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; background: #000; overflow: hidden; }
+  .video-slot { position: relative; background: #0d0d14; overflow: hidden; }
+  video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .video-label { position: absolute; top: 14px; left: 14px; background: rgba(0,0,0,0.55); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 5px 12px; font-size: 0.78rem; font-weight: 500; color: #fff; display: flex; align-items: center; gap: 6px; }
+  .video-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent2); animation: pulse 2s infinite; }
+  .subtitle-box { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); max-width: 90%; background: rgba(0,0,0,0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 18px; font-size: 1rem; color: #fff; text-align: center; line-height: 1.5; pointer-events: none; opacity: 0; transition: opacity 0.3s; white-space: pre-wrap; }
+  .subtitle-box.visible { opacity: 1; }
+  .my-transcript { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); max-width: 90%; background: rgba(124,108,252,0.2); backdrop-filter: blur(8px); border: 1px solid rgba(124,108,252,0.3); border-radius: 12px; padding: 8px 16px; font-size: 0.9rem; color: rgba(255,255,255,0.85); text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+  .my-transcript.visible { opacity: 1; }
+  .waiting-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; height: 100%; color: var(--muted); }
+  .waiting-placeholder .spinner { width: 36px; height: 36px; border: 2px solid var(--surface2); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+  .waiting-placeholder p { font-size: 0.9rem; }
+  .tap-overlay { display: none; position: absolute; inset: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); color: #fff; font-size: 1.1rem; border: none; cursor: pointer; z-index: 10; }
+  .controls { background: var(--surface); border-top: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .lang-pair { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--muted); }
+  .lang-pair select { padding: 8px 30px 8px 12px; font-size: 0.85rem; width: auto; min-width: 150px; appearance: none; -webkit-appearance: none; }
+  .ctl-btns { display: flex; gap: 10px; }
+  .ctl-btn { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: all 0.18s; }
+  .ctl-btn:hover { border-color: var(--accent); }
+  .ctl-btn.active { background: var(--accent); border-color: var(--accent); }
+  .ctl-btn.end { background: var(--danger); border-color: var(--danger); }
+  .mic-status { font-size: 0.75rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .mic-status .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent2); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 600px) { .videos { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } .controls { flex-direction: column; align-items: stretch; } .ctl-btns { justify-content: center; } }
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" class="screen active">
+  <div class="logo">
+    <h1>LinguaCall</h1>
+    <p>Real-time translated video calls across any language</p>
+  </div>
+  <div class="card" id="phone-step">
+    <div class="card-title">Sign in with your phone</div>
+    <div>
+      <label>Phone number</label>
+      <input type="tel" id="phone-input" placeholder="+1 555 000 0000"/>
+    </div>
+    <div id="recaptcha-container"></div>
+    <button class="btn btn-primary btn-full" onclick="sendCode()">Send verification code</button>
+    <div class="auth-hint">Include your country code (e.g. +1 for Canada, +84 for Vietnam)</div>
+    <div class="auth-error" id="phone-error"></div>
+  </div>
+  <div class="card" id="code-step" style="display:none">
+    <div class="card-title">Enter verification code</div>
+    <div>
+      <label>6-digit code</label>
+      <input type="number" id="code-input" placeholder="000000"/>
+    </div>
+    <button class="btn btn-primary btn-full" onclick="verifyCode()">Verify &amp; continue</button>
+    <div class="auth-hint">Code sent to <span id="phone-display"></span></div>
+    <div class="auth-error" id="code-error"></div>
+    <div class="back-link" onclick="backToPhone()">← Use a different number</div>
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div id="lobby" class="screen">
+  <div class="logo">
+    <h1>LinguaCall</h1>
+    <p>Real-time translated video calls across any language</p>
+  </div>
+  <div class="card">
+    <div class="card-title">Your language</div>
+    <div>
+      <label>I speak</label>
+      <div class="select-wrap">
+        <select id="my-lang">
+          <option value="en">🇬🇧 English</option>
+          <option value="vi">🇻🇳 Vietnamese</option>
+          <option value="zh">🇨🇳 Chinese (Mandarin)</option>
+          <option value="ja">🇯🇵 Japanese</option>
+          <option value="ko">🇰🇷 Korean</option>
+          <option value="fr">🇫🇷 French</option>
+          <option value="de">🇩🇪 German</option>
+          <option value="es">🇪🇸 Spanish</option>
+          <option value="it">🇮🇹 Italian</option>
+          <option value="pt">🇧🇷 Portuguese</option>
+          <option value="ru">🇷🇺 Russian</option>
+          <option value="ar">🇸🇦 Arabic</option>
+          <option value="hi">🇮🇳 Hindi</option>
+          <option value="nl">🇳🇱 Dutch</option>
+          <option value="pl">🇵🇱 Polish</option>
+          <option value="tr">🇹🇷 Turkish</option>
+          <option value="sv">🇸🇪 Swedish</option>
+          <option value="da">🇩🇰 Danish</option>
+          <option value="fi">🇫🇮 Finnish</option>
+          <option value="nb">🇳🇴 Norwegian</option>
+          <option value="id">🇮🇩 Indonesian</option>
+          <option value="cs">🇨🇿 Czech</option>
+          <option value="ro">🇷🇴 Romanian</option>
+          <option value="hu">🇭🇺 Hungarian</option>
+          <option value="uk">🇺🇦 Ukrainian</option>
+        </select>
+      </div>
+    </div>
+    <div>
+      <label>Translate their speech into</label>
+      <div class="select-wrap">
+        <select id="target-lang">
+          <option value="vi">🇻🇳 Vietnamese</option>
+          <option value="en">🇬🇧 English</option>
+          <option value="zh">🇨🇳 Chinese (Mandarin)</option>
+          <option value="ja">🇯🇵 Japanese</option>
+          <option value="ko">🇰🇷 Korean</option>
+          <option value="fr">🇫🇷 French</option>
+          <option value="de">🇩🇪 German</option>
+          <option value="es">🇪🇸 Spanish</option>
+          <option value="it">🇮🇹 Italian</option>
+          <option value="pt">🇧🇷 Portuguese</option>
+          <option value="ru">🇷🇺 Russian</option>
+          <option value="ar">🇸🇦 Arabic</option>
+          <option value="hi">🇮🇳 Hindi</option>
+          <option value="nl">🇳🇱 Dutch</option>
+          <option value="pl">🇵🇱 Polish</option>
+          <option value="tr">🇹🇷 Turkish</option>
+          <option value="sv">🇸🇪 Swedish</option>
+          <option value="da">🇩🇰 Danish</option>
+          <option value="fi">🇫🇮 Finnish</option>
+          <option value="nb">🇳🇴 Norwegian</option>
+          <option value="id">🇮🇩 Indonesian</option>
+          <option value="cs">🇨🇿 Czech</option>
+          <option value="ro">🇷🇴 Romanian</option>
+          <option value="hu">🇭🇺 Hungarian</option>
+          <option value="uk">🇺🇦 Ukrainian</option>
+        </select>
+      </div>
+    </div>
+    <div class="divider">room code</div>
+    <div>
+      <label>Join or create a room</label>
+      <div class="room-row">
+        <input type="text" id="room-input" placeholder="e.g. ABC123" maxlength="20"/>
+        <button class="btn btn-secondary" onclick="generateRoom()">Random</button>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-full" onclick="joinRoom()">Start Call</button>
+    <div id="status-msg"></div>
+  </div>
+</div>
+
+<!-- CALL SCREEN -->
+<div id="call-screen">
+  <div class="videos">
+    <div class="video-slot">
+      <video id="my-video" autoplay muted playsinline></video>
+      <div class="video-label"><span class="dot"></span><span id="my-label">You</span></div>
+      <div class="my-transcript" id="my-transcript"></div>
+    </div>
+    <div class="video-slot">
+      <div class="waiting-placeholder" id="waiting-ui">
+        <div class="spinner"></div>
+        <p>Waiting for other person…</p>
+      </div>
+      <video id="remote-video" autoplay playsinline style="display:none"></video>
+      <button class="tap-overlay" id="tap-to-play" onclick="tapToPlay()">▶ Tap to start video</button>
+      <div class="video-label" id="remote-label-box" style="display:none"><span class="dot"></span><span>Them</span></div>
+      <div class="subtitle-box" id="subtitle-box"></div>
+    </div>
+  </div>
+  <div class="controls">
+    <div class="lang-pair">
+      <span>Translate →</span>
+      <div class="select-wrap">
+        <select id="call-target-lang" onchange="updateTargetLang(this.value)"></select>
+      </div>
+    </div>
+    <div class="mic-status"><span class="live-dot"></span><span id="mic-label">Listening…</span></div>
+    <div class="ctl-btns">
+      <button class="ctl-btn" id="mic-btn" onclick="toggleMic()">🎙️</button>
+      <button class="ctl-btn" id="cam-btn" onclick="toggleCam()">📷</button>
+      <button class="ctl-btn end" onclick="endCall()">📵</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Firebase ──────────────────────────────────────────────────────────────────
+firebase.initializeApp({
+  apiKey: "AIzaSyC-p1p-L89BtaAMfigolt-t3rnxgc7uYvU",
+  authDomain: "linguacall-25309.firebaseapp.com",
+  projectId: "linguacall-25309",
+  storageBucket: "linguacall-25309.firebasestorage.app",
+  messagingSenderId: "80323348618",
+  appId: "1:80323348618:web:e9c14f7b344d2521b54573"
+});
+
+const auth = firebase.auth();
+let recaptchaVerifier, confirmationResult;
+
+function initRecaptcha() {
+  recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+    size: 'normal',
+    callback: () => {},
+    'expired-callback': () => { recaptchaVerifier.clear(); initRecaptcha(); }
+  });
+  recaptchaVerifier.render();
+}
+
+async function sendCode() {
+  const phone = document.getElementById('phone-input').value.trim();
+  const errEl = document.getElementById('phone-error');
+  errEl.textContent = '';
+  if (!phone) { errEl.textContent = 'Please enter your phone number.'; return; }
+  try {
+    confirmationResult = await auth.signInWithPhoneNumber(phone, recaptchaVerifier);
+    document.getElementById('phone-display').textContent = phone;
+    document.getElementById('phone-step').style.display = 'none';
+    document.getElementById('code-step').style.display = 'flex';
+    document.getElementById('code-step').style.flexDirection = 'column';
+  } catch (e) {
+    errEl.textContent = e.message || 'Failed to send code.';
+    recaptchaVerifier.clear();
+    initRecaptcha();
+  }
+}
+
+async function verifyCode() {
+  const code = document.getElementById('code-input').value.trim();
+  const errEl = document.getElementById('code-error');
+  errEl.textContent = '';
+  if (!code) { errEl.textContent = 'Please enter the 6-digit code.'; return; }
+  try {
+    await confirmationResult.confirm(code);
+    showScreen('lobby');
+  } catch (e) {
+    errEl.textContent = 'Invalid code. Please try again.';
+  }
+}
+
+function backToPhone() {
+  document.getElementById('code-step').style.display = 'none';
+  document.getElementById('phone-step').style.display = 'flex';
+  document.getElementById('phone-error').textContent = '';
+  recaptchaVerifier.clear();
+  initRecaptcha();
+}
+
+// ── Screen management ─────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+// ── App state ─────────────────────────────────────────────────────────────────
+let socket, pc, localStream;
+let myLang = 'en', targetLang = 'vi';
+let micEnabled = true, camEnabled = true;
+let subtitleTimer;
+let dgActive = false;
+
+const ICE_SERVERS = { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:openrelay.metered.ca:443' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+]};
+
+const LANG_OPTIONS = [
+  ['en','🇬🇧 English'],['vi','🇻🇳 Vietnamese'],['zh','🇨🇳 Chinese'],
+  ['ja','🇯🇵 Japanese'],['ko','🇰🇷 Korean'],['fr','🇫🇷 French'],
+  ['de','🇩🇪 German'],['es','🇪🇸 Spanish'],['it','🇮🇹 Italian'],
+  ['pt','🇧🇷 Portuguese'],['ru','🇷🇺 Russian'],['ar','🇸🇦 Arabic'],
+  ['hi','🇮🇳 Hindi'],['nl','🇳🇱 Dutch'],['pl','🇵🇱 Polish'],
+  ['tr','🇹🇷 Turkish'],['sv','🇸🇪 Swedish'],['da','🇩🇰 Danish'],
+  ['fi','🇫🇮 Finnish'],['nb','🇳🇴 Norwegian'],['id','🇮🇩 Indonesian'],
+  ['cs','🇨🇿 Czech'],['ro','🇷🇴 Romanian'],['hu','🇭🇺 Hungarian'],['uk','🇺🇦 Ukrainian'],
+];
+
+window.addEventListener('DOMContentLoaded', () => {
+  initRecaptcha();
+  generateRoom();
+  LANG_OPTIONS.forEach(([code, label]) => {
+    const o = document.createElement('option');
+    o.value = code; o.textContent = label;
+    document.getElementById('call-target-lang').appendChild(o);
+  });
+});
+
+function generateRoom() {
+  const el = document.getElementById('room-input');
+  if (el) el.value = Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function setStatus(msg, cls = '') {
+  const el = document.getElementById('status-msg');
+  if (el) { el.textContent = msg; el.className = cls; }
+}
+
+// ── Join room ─────────────────────────────────────────────────────────────────
+async function joinRoom() {
+  const room = document.getElementById('room-input').value.trim();
+  if (!room) { setStatus('Enter a room code first.', 'error'); return; }
+  myLang     = document.getElementById('my-lang').value;
+  targetLang = document.getElementById('target-lang').value;
+  document.getElementById('my-label').textContent = 'You (' + myLang.toUpperCase() + ')';
+  const callSel = document.getElementById('call-target-lang');
+  if (callSel) callSel.value = targetLang;
+  setStatus('Connecting…');
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    document.getElementById('my-video').srcObject = localStream;
+  } catch (err) {
+    setStatus('Camera/mic access denied: ' + err.message, 'error');
+    return;
+  }
+  initSocket(room);
+}
+
+// ── Socket signaling ──────────────────────────────────────────────────────────
+function initSocket(room) {
+  socket = io();
+
+  socket.on('connect', () => {
+    socket.emit('join-room', room);
+  });
+
+  socket.on('waiting', () => {
+    setStatus('Waiting — share this code: ' + room, 'waiting');
+    showCallScreen();
+  });
+
+  socket.on('ready', async ({ initiator }) => {
+    setStatus('Connected!', 'ok');
+    showCallScreen();
+    showRemoteVideo();
+    await createPeerConnection();
+    if (initiator) {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit('offer', offer);
+    }
+  });
+
+  socket.on('offer', async (offer) => {
+    showCallScreen();
+    showRemoteVideo();
+    if (!pc) await createPeerConnection();
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('answer', answer);
+  });
+
+  socket.on('answer', (answer) => {
+    if (pc) pc.setRemoteDescription(new RTCSessionDescription(answer));
+  });
+
+  socket.on('ice', (ice) => {
+    if (ice && pc) pc.addIceCandidate(new RTCIceCandidate(ice)).catch(() => {});
+  });
+
+  socket.on('subtitle', ({ text }) => showSubtitle(text));
+
+  socket.on('peer-disconnected', () => {
+    document.getElementById('remote-video').style.display = 'none';
+    document.getElementById('waiting-ui').style.display   = 'flex';
+    document.getElementById('remote-label-box').style.display = 'none';
+    setStatus('Other person disconnected.', 'error');
+  });
+
+  socket.on('room-full', () => setStatus('Room is full (max 2 people).', 'error'));
+
+  // ── Transcription events from server ────────────────────────────────────────
+  socket.on('transcription-ready', () => {
+    console.log('[deepgram] transcription ready via server proxy');
+    document.getElementById('mic-label').textContent = 'Live transcription on';
+    dgActive = true;
+    startAudioCapture();
+  });
+
+  socket.on('transcript', async ({ transcript, isFinal }) => {
+    if (!transcript) return;
+    console.log('[transcript]', transcript, 'final:', isFinal);
+    showMyTranscript(transcript, isFinal);
+    if (isFinal && transcript.trim()) {
+      const translated = await translateText(transcript, targetLang);
+      console.log('[translate]', translated);
+      socket.emit('subtitle', { text: translated });
+    }
+  });
+
+  socket.on('transcription-closed', () => {
+    console.log('[deepgram] transcription closed');
+    document.getElementById('mic-label').textContent = 'Transcription disconnected';
+    dgActive = false;
+  });
+}
+
+// ── Peer connection ───────────────────────────────────────────────────────────
+async function createPeerConnection() {
+  pc = new RTCPeerConnection(ICE_SERVERS);
+  localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+  pc.onicecandidate = ({ candidate }) => {
+    if (candidate) socket.emit('ice', candidate);
+  };
+
+  pc.onconnectionstatechange = () => {
+    console.log('[pc] connectionState:', pc.connectionState);
+  };
+
+  pc.ontrack = ({ track, streams }) => {
+    const remoteVideo = document.getElementById('remote-video');
+    if (streams && streams[0]) {
+      remoteVideo.srcObject = streams[0];
+    } else {
+      if (!remoteVideo.srcObject) remoteVideo.srcObject = new MediaStream();
+      remoteVideo.srcObject.addTrack(track);
+    }
+    showRemoteVideo();
+    remoteVideo.play().catch(() => {
+      document.getElementById('tap-to-play').style.display = 'block';
+    });
+  };
+
+  startDeepgram();
+}
+
+// ── Deepgram via server proxy ─────────────────────────────────────────────────
+function startDeepgram() {
+  const DG_LANG = {
+    en:'en-US', vi:'vi', zh:'zh-CN', ja:'ja', ko:'ko',
+    fr:'fr', de:'de', es:'es', it:'it', pt:'pt-BR',
+    ru:'ru', ar:'ar', hi:'hi', nl:'nl', pl:'pl',
+    tr:'tr', sv:'sv', da:'da', fi:'fi', nb:'nb',
+    id:'id', cs:'cs', ro:'ro', hu:'hu', uk:'uk'
+  };
+  const locale = DG_LANG[myLang] || 'en-US';
+  console.log('[deepgram] requesting transcription lang:', locale);
+  socket.emit('start-transcription', { lang: locale });
+}
+
+// ── Audio capture ─────────────────────────────────────────────────────────────
+async function startAudioCapture() {
+  try {
+    const audioCtx  = new AudioContext();
+    try { await audioCtx.resume(); } catch(e) {}
+    const source    = audioCtx.createMediaStreamSource(localStream);
+    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+    processor.onaudioprocess = (e) => {
+      if (!dgActive || !socket) return;
+      const input = e.inputBuffer.getChannelData(0);
+      const pcm   = new Int16Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        pcm[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
+      }
+      socket.emit('audio-chunk', pcm.buffer);
+    };
+    console.log('[audio] capture started, sample rate:', audioCtx.sampleRate);
+  } catch(e) {
+    console.error('[audio] capture failed:', e);
+  }
+}
+
+// ── Translation ───────────────────────────────────────────────────────────────
+async function translateText(text, lang) {
+  try {
+    const r = await fetch('/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, targetLang: lang })
+    });
+    const d = await r.json();
+    return d.translation || text;
+  } catch { return text; }
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function showCallScreen() {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('call-screen').classList.add('active');
+}
+
+function showRemoteVideo() {
+  document.getElementById('waiting-ui').style.display       = 'none';
+  document.getElementById('remote-video').style.display     = 'block';
+  document.getElementById('remote-label-box').style.display = 'flex';
+}
+
+function tapToPlay() {
+  const v = document.getElementById('remote-video');
+  v.play().then(() => {
+    document.getElementById('tap-to-play').style.display = 'none';
+  }).catch(() => {});
+}
+
+function showSubtitle(text) {
+  const box = document.getElementById('subtitle-box');
+  box.textContent = text;
+  box.classList.add('visible');
+  clearTimeout(subtitleTimer);
+  subtitleTimer = setTimeout(() => box.classList.remove('visible'), 5000);
+}
+
+function showMyTranscript(text, isFinal) {
+  const el = document.getElementById('my-transcript');
+  el.textContent = text;
+  el.classList.add('visible');
+  if (isFinal) setTimeout(() => el.classList.remove('visible'), 2500);
+}
+
+function updateTargetLang(val) { targetLang = val; }
+
+function toggleMic() {
+  micEnabled = !micEnabled;
+  localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
+  document.getElementById('mic-btn').textContent = micEnabled ? '🎙️' : '🔇';
+  document.getElementById('mic-btn').classList.toggle('active', !micEnabled);
+}
+
+function toggleCam() {
+  camEnabled = !camEnabled;
+  localStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
+  document.getElementById('cam-btn').textContent = camEnabled ? '📷' : '🚫';
+  document.getElementById('cam-btn').classList.toggle('active', !camEnabled);
+}
+
+function endCall() {
+  dgActive = false;
+  if (socket) socket.emit('stop-transcription');
+  if (pc) { pc.close(); pc = null; }
+  if (localStream) localStream.getTracks().forEach(t => t.stop());
+  if (socket) { socket.disconnect(); socket = null; }
+  document.getElementById('call-screen').classList.remove('active');
+  showScreen('lobby');
+  setStatus('');
+}
+</script>
+</body>
+</html>
