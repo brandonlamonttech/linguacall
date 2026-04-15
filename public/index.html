@@ -449,10 +449,14 @@ function initSocket(room) {
   });
 
   socket.on('transcription-closed', () => {
-    console.log('[deepgram] closed');
-    document.getElementById('mic-label').textContent = 'Transcription disconnected';
-    dgActive = false;
-  });
+      console.log('[deepgram] closed — reconnecting in 2s');
+      document.getElementById('mic-label').textContent = 'Reconnecting…';
+      if (dgActive) {
+        setTimeout(() => {
+          startDeepgram();
+        }, 2000);
+      }
+    });
 }
 
 // ── Peer connection ───────────────────────────────────────────────────────────
