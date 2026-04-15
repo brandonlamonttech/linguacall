@@ -7,7 +7,10 @@ const WebSocket = require("ws");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { 
+  cors: { origin: "*" },
+  transports: ['websocket', 'polling']
+});
 
 app.use(express.static("public"));
 app.use(express.json());
@@ -33,20 +36,24 @@ app.get("/deepgram-key", (req, res) => {
   res.json({ key: process.env.DEEPGRAM_API_KEY || "" });
 });
 
-// ── WebRTC signaling + Deepgram proxy ─────────────────────────────────────────
-const rooms = {};
+// ── Room management ───────────────────────────────────────────────────────────
+const rooms = new Map();
 
+function getRoom(roomId) {
+  if (!rooms.has(roomId)) rooms.set(roomId, []);
+  return rooms.get(roomId);
+}
+
+// ── WebRTC signaling + Deepgram proxy ─────────────────────────────────────────
 io.on("connection", (socket) => {
   console.log(`[connect] socket=${socket.id}`);
 
   socket.on("join-room", (roomId) => {
-    if (!rooms[roomId]) rooms[roomId] = [];
-    const room = rooms[roomId];
-    console.log(
-      `[join-room] socket=${socket.id} room=${roomId} occupants=${room.length}`,
-    );
+    const room = getRoom(roomId);
+    console.log(`[join-room] socket=${socket.id} room=${roomId} current occupants=${room.length}`);
 
     if (room.length >= 2) {
+      console.log(`[join-room] room=${roomId} FULL`);
       socket.emit("room-full");
       return;
     }
@@ -55,16 +62,19 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     socket.data.roomId = roomId;
 
+    console.log(`[join-room] after push room=${roomId} occupants=${room.length} members=${JSON.stringify(room)}`);
+
     if (room.length === 2) {
       const [first, second] = room;
-      const firstSocket = io.sockets.sockets.get(first);
+      const firstSocket  = io.sockets.sockets.get(first);
       const secondSocket = io.sockets.sockets.get(second);
-      if (firstSocket) firstSocket.data.peerId = second;
+      if (firstSocket)  firstSocket.data.peerId  = second;
       if (secondSocket) secondSocket.data.peerId = first;
-      console.log(`[ready] initiator=${first} receiver=${second}`);
-      io.to(first).emit("ready", { initiator: true });
+      console.log(`[ready] room=${roomId} initiator=${first} receiver=${second}`);
+      io.to(first).emit("ready",  { initiator: true });
       io.to(second).emit("ready", { initiator: false });
     } else {
+      console.log(`[waiting] room=${roomId} has 1 peer`);
       socket.emit("waiting");
     }
   });
@@ -78,11 +88,11 @@ io.on("connection", (socket) => {
       return;
     }
 
-   const dgUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=48000&language=${lang}&punctuate=true&interim_results=true`;
+    const dgUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=48000&language=${lang}&punctuate=true&interim_results=true`;
     console.log(`[deepgram] opening for socket=${socket.id} lang=${lang}`);
 
     const dg = new WebSocket(dgUrl, {
-      headers: { Authorization: `Token ${key}` },
+      headers: { Authorization: `Token ${key}` }
     });
 
     dg.on("open", () => {
@@ -92,13 +102,13 @@ io.on("connection", (socket) => {
 
     dg.on("message", (data) => {
       try {
-        const parsed = JSON.parse(data);
+        const parsed     = JSON.parse(data);
         const transcript = parsed.channel?.alternatives?.[0]?.transcript || "";
-        const isFinal = parsed.is_final;
+        const isFinal    = parsed.is_final;
         if (!transcript) return;
         console.log(`[deepgram] transcript="${transcript}" final=${isFinal}`);
         socket.emit("transcript", { transcript, isFinal });
-      } catch (e) {}
+      } catch(e) {}
     });
 
     dg.on("close", (code) => {
@@ -137,25 +147,32 @@ io.on("connection", (socket) => {
   // ── Relay ───────────────────────────────────────────────────────────────────
   function relay(event, data) {
     const peerId = socket.data.peerId;
-    if (!peerId) {
-      console.warn(`[${event}] no peerId, dropping`);
-      return;
+    if (!peerId) { 
+      console.warn(`[${event}] no peerId for socket=${socket.id}, dropping`); 
+      return; 
     }
     console.log(`[${event}] from=${socket.id} → peer=${peerId}`);
     io.to(peerId).emit(event, data);
   }
 
-  socket.on("offer", (data) => relay("offer", data));
-  socket.on("answer", (data) => relay("answer", data));
-  socket.on("ice", (data) => relay("ice", data));
+  socket.on("offer",    (data) => relay("offer",    data));
+  socket.on("answer",   (data) => relay("answer",   data));
+  socket.on("ice",      (data) => relay("ice",      data));
   socket.on("subtitle", (data) => relay("subtitle", data));
 
   socket.on("disconnect", () => {
     const roomId = socket.data.roomId;
     console.log(`[disconnect] socket=${socket.id} room=${roomId}`);
-    if (roomId && rooms[roomId]) {
-      rooms[roomId] = rooms[roomId].filter((id) => id !== socket.id);
-      if (rooms[roomId].length === 0) delete rooms[roomId];
+    if (roomId && rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      const updated = room.filter((id) => id !== socket.id);
+      if (updated.length === 0) {
+        rooms.delete(roomId);
+        console.log(`[disconnect] room=${roomId} deleted`);
+      } else {
+        rooms.set(roomId, updated);
+        console.log(`[disconnect] room=${roomId} now has ${updated.length} members`);
+      }
       io.to(roomId).emit("peer-disconnected");
     }
   });
