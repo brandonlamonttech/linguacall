@@ -506,7 +506,7 @@ function startDeepgram() {
 // ── Audio capture ─────────────────────────────────────────────────────────────
 async function startAudioCapture() {
   try {
-    const audioCtx  = new AudioContext();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     try { await audioCtx.resume(); } catch(e) {}
     const source    = audioCtx.createMediaStreamSource(localStream);
     const processor = audioCtx.createScriptProcessor(4096, 1, 1);
