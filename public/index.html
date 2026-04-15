@@ -507,13 +507,26 @@ function startDeepgram() {
 async function startAudioCapture() {
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Resume on user interaction for mobile
+    const resumeAudio = async () => {
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+    };
+    document.addEventListener('touchstart', resumeAudio, { once: false });
+    document.addEventListener('click', resumeAudio, { once: false });
+    
     try { await audioCtx.resume(); } catch(e) {}
+    
     const source    = audioCtx.createMediaStreamSource(localStream);
     const processor = audioCtx.createScriptProcessor(4096, 1, 1);
     source.connect(processor);
     processor.connect(audioCtx.destination);
     processor.onaudioprocess = (e) => {
       if (!dgActive || !socket) return;
+      // Resume if suspended
+      if (audioCtx.state === 'suspended') audioCtx.resume();
       const input = e.inputBuffer.getChannelData(0);
       const pcm   = new Int16Array(input.length);
       for (let i = 0; i < input.length; i++) {
