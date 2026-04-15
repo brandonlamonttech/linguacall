@@ -489,57 +489,77 @@ async function createPeerConnection() {
   startDeepgram();
 }
 
-// ── Deepgram via server proxy ─────────────────────────────────────────────────
 function startDeepgram() {
   const DG_LANG = {
     en:'en-US', vi:'vi-VN', zh:'zh-CN', ja:'ja', ko:'ko',
-    fr:'fr', de:'de', es:'es', it:'it', pt:'pt-BR',
-    ru:'ru', ar:'ar', hi:'hi', nl:'nl', pl:'pl',
-    tr:'tr', sv:'sv', da:'da', fi:'fi', nb:'nb',
-    id:'id', cs:'cs', ro:'ro', hu:'hu', uk:'uk'
+    fr:'fr-FR', de:'de-DE', es:'es-ES', it:'it-IT', pt:'pt-BR',
+    ru:'ru-RU', ar:'ar', hi:'hi-IN', nl:'nl-NL', pl:'pl-PL',
+    tr:'tr-TR', sv:'sv-SE', da:'da-DK', fi:'fi-FI', nb:'nb-NO',
+    id:'id-ID', cs:'cs-CZ', ro:'ro-RO', hu:'hu-HU', uk:'uk-UA'
   };
   const locale = DG_LANG[myLang] || 'en-US';
-  console.log('[deepgram] requesting transcription lang:', locale);
-  socket.emit('start-transcription', { lang: locale });
+  console.log('[speech] starting Web Speech API, lang:', locale);
+  startWebSpeech(locale);
 }
 
-// ── Audio capture ─────────────────────────────────────────────────────────────
-async function startAudioCapture() {
-  try {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
-    // Resume on user interaction for mobile
-    const resumeAudio = async () => {
-      if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-      }
-    };
-    document.addEventListener('touchstart', resumeAudio, { once: false });
-    document.addEventListener('click', resumeAudio, { once: false });
-    
-    try { await audioCtx.resume(); } catch(e) {}
-    
-    const source    = audioCtx.createMediaStreamSource(localStream);
-    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-    source.connect(processor);
-    processor.connect(audioCtx.destination);
-    processor.onaudioprocess = (e) => {
-      if (!dgActive || !socket) return;
-      // Resume if suspended
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      const input = e.inputBuffer.getChannelData(0);
-      const pcm   = new Int16Array(input.length);
-      for (let i = 0; i < input.length; i++) {
-        pcm[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
-      }
-      socket.emit('audio-chunk', pcm.buffer);
-    };
-    console.log('[audio] capture started, sample rate:', audioCtx.sampleRate);
-  } catch(e) {
-    console.error('[audio] capture failed:', e);
+function startWebSpeech(locale) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.error('[speech] Web Speech API not supported');
+    document.getElementById('mic-label').textContent = 'Speech not supported on this browser';
+    return;
   }
+
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = locale;
+
+  recognition.onstart = () => {
+    console.log('[speech] started');
+    document.getElementById('mic-label').textContent = 'Live transcription on';
+    dgActive = true;
+  };
+
+  recognition.onresult = async (event) => {
+    let interim = '';
+    let final = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        final += transcript;
+      } else {
+        interim += transcript;
+      }
+    }
+    if (interim) showMyTranscript(interim, false);
+    if (final && final.trim()) {
+      showMyTranscript(final, true);
+      console.log('[speech] final:', final);
+      const translated = await translateText(final, targetLang);
+      console.log('[translate]', translated);
+      socket.emit('subtitle', { text: translated });
+    }
+  };
+
+  recognition.onerror = (e) => {
+    console.error('[speech] error:', e.error);
+    if (e.error === 'not-allowed') {
+      document.getElementById('mic-label').textContent = 'Mic access denied';
+    }
+  };
+
+  recognition.onend = () => {
+    console.log('[speech] ended — restarting');
+    if (dgActive) {
+      setTimeout(() => recognition.start(), 500);
+    }
+  };
+
+  recognition.start();
 }
 
+async function startAudioCapture() {}
 // ── Translation ───────────────────────────────────────────────────────────────
 async function translateText(text, lang) {
   try {
