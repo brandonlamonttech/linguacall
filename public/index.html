@@ -521,6 +521,9 @@ function startWebSpeech(locale) {
     dgActive = true;
   };
 
+  let translateTimer = null;
+  let lastInterim = '';
+
   recognition.onresult = async (event) => {
     let interim = '';
     let final = '';
@@ -532,12 +535,26 @@ function startWebSpeech(locale) {
         interim += transcript;
       }
     }
-    if (interim) showMyTranscript(interim, false);
+
+    if (interim) {
+      showMyTranscript(interim, false);
+      if (interim !== lastInterim) {
+        lastInterim = interim;
+        clearTimeout(translateTimer);
+        translateTimer = setTimeout(async () => {
+          if (interim.trim()) {
+            const translated = await translateText(interim, targetLang);
+            socket.emit('subtitle', { text: translated });
+          }
+        }, 150);
+      }
+    }
+
     if (final && final.trim()) {
+      clearTimeout(translateTimer);
+      lastInterim = '';
       showMyTranscript(final, true);
-      console.log('[speech] final:', final);
       const translated = await translateText(final, targetLang);
-      console.log('[translate]', translated);
       socket.emit('subtitle', { text: translated });
     }
   };
