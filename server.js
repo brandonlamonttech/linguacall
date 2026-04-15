@@ -78,7 +78,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const dgUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=48000&detect_language=true&punctuate=true&interim_results=true`;
+   const dgUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=48000&language=${lang}&punctuate=true&interim_results=true`;
     console.log(`[deepgram] opening for socket=${socket.id} lang=${lang}`);
 
     const dg = new WebSocket(dgUrl, {
