@@ -415,7 +415,10 @@ function initSocket(room) {
     if (ice && pc) pc.addIceCandidate(new RTCIceCandidate(ice)).catch(() => {});
   });
 
-  socket.on('subtitle', ({ text }) => showSubtitle(text));
+  socket.on('subtitle', ({ text }) => {
+    console.log('[subtitle] received:', text);
+    showSubtitle(text);
+  });
 
   socket.on('peer-disconnected', () => {
     document.getElementById('remote-video').style.display = 'none';
@@ -426,9 +429,9 @@ function initSocket(room) {
 
   socket.on('room-full', () => setStatus('Room is full (max 2 people).', 'error'));
 
-  // ── Transcription events from server ────────────────────────────────────────
+  // ── Transcription events ────────────────────────────────────────────────────
   socket.on('transcription-ready', () => {
-    console.log('[deepgram] transcription ready via server proxy');
+    console.log('[deepgram] transcription ready');
     document.getElementById('mic-label').textContent = 'Live transcription on';
     dgActive = true;
     startAudioCapture();
@@ -440,13 +443,13 @@ function initSocket(room) {
     showMyTranscript(transcript, isFinal);
     if (isFinal && transcript.trim()) {
       const translated = await translateText(transcript, targetLang);
-      console.log('[translate]', translated);
+      console.log('[translate] result:', translated, '→ emitting subtitle');
       socket.emit('subtitle', { text: translated });
     }
   });
 
   socket.on('transcription-closed', () => {
-    console.log('[deepgram] transcription closed');
+    console.log('[deepgram] closed');
     document.getElementById('mic-label').textContent = 'Transcription disconnected';
     dgActive = false;
   });
